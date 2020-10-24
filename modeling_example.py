@@ -1,5 +1,5 @@
 import sys, os
-sys.path.insert(0,'/usr/local/pysource/')
+sys.path.insert(0,'/usr/local/devito4batch/pysource/')
 
 import numpy as np
 import matplotlib.pyplot as plt
