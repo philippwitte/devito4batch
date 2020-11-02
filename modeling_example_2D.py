@@ -1,6 +1,6 @@
 import sys, os
-sys.path.insert(0,'/usr/local/devito4batch/pysource/')
-
+#sys.path.insert(0,'/usr/local/devito4batch/pysource/')
+sys.path.insert(0, os.getcwd() + '/pysource')
 import numpy as np
 import matplotlib.pyplot as plt
 from models import Model
@@ -115,9 +115,9 @@ rec_coords[:, 1] = np.array(np.linspace(6., 6., nrec))
 model = Model(shape=shape, origin=origin, spacing=spacing, vp=np.sqrt(1/m0), space_order=so,
     epsilon=epsilon, delta=delta, theta=theta, rho=rho, nbpml=40, dm=dm)
 
-comm = model.grid.distributor.comm
-rank = comm.Get_rank()
-size = comm.size
+# comm = model.grid.distributor.comm
+# rank = comm.Get_rank()
+# size = comm.size
 
 #########################################################################################
 
@@ -132,11 +132,13 @@ wavelet = Ricker(0.015, time_s)
 #########################################################################################
 
 # Devito operator
-d_obs = forward(model, src_coords, rec_coords, wavelet, save=False, t_sub=4)[0]
-d_gather, rec_gather = collect_shot(comm, d_obs)
+d_obs, u0, summary = forward(model, src_coords, rec_coords, wavelet, save=True, t_sub=4)
+grad_dist, summary3 = gradient(model, d_obs, d_obs.coordinates, u0, isic=False)
 
-if rank == 0:
-    segy_write(d_gather, src_coords[:, 0], src_coords[:, 1], rec_coords[:, 0], rec_coords[:, 1], dt_shot, 'shot_n_2.segy')
+#d_gather, rec_gather = collect_shot(comm, d_obs)
+
+#if rank == 0:
+#    segy_write(d_gather, src_coords[:, 0], src_coords[:, 1], rec_coords[:, 0], rec_coords[:, 1], dt_shot, 'shot_n_2.segy')
 
 
 
