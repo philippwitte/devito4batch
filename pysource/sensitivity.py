@@ -46,8 +46,8 @@ def grad_expr(gradm, u, v, model, w=None, freq=None, dft_sub=None, isic=False):
         eq_g += freesurface(model, eq_g)
     else:
         eq_g = [Eq(gradm, expr + gradm)]
-    return eq_g
-
+    return [g.evaluate for g in eq_g]
+    
 
 def crosscorr_time(u, v, model, **kwargs):
     """

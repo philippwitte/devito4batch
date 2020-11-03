@@ -5,6 +5,7 @@ from sources import RickerSource, Receiver
 from models import Model
 
 from propagators import *
+from interface import *
 
 parser = ArgumentParser(description="Adjoint test args")
 
@@ -91,21 +92,21 @@ b = .030
 freq_list = np.sort(a + (b - a) * (np.random.randint(N, size=(10,)) - 1) / (N - 1.))
 dft_sub = 1
 # Propagators (Level 2)
-d_obs, _ = forward(modelfs, src.coordinates.data, rec_t.coordinates.data, src.data)
-d_obs, _ = forward(model, src.coordinates.data, rec_t.coordinates.data, src.data)
+d_obs, _ = forward(model, src.coordinates.data, rec_t.coordinates.data, src.data)[0:2]
+d_obs, _ = forward(model, src.coordinates.data, rec_t.coordinates.data, src.data)[0:2]
 
 d_lin, _ = born(model0, src.coordinates.data, rec_t.coordinates.data,
-                src.data, isic=True)
+        src.data, isic=True)[0:2]
 
 
 d0, u0 = forward(model0, src.coordinates.data, rec_t.coordinates.data, src.data,
-                 dft_sub=dft_sub, space_order=8, save=False, freq_list=freq_list)
+        dft_sub=dft_sub, space_order=8, save=False, freq_list=freq_list)[0:2]
 
 g = gradient(model0, d_lin, rec_t.coordinates.data, u0, return_op=False, space_order=8,
-             w=None, freq=freq_list, dft_sub=dft_sub)
+             w=None, freq=freq_list, dft_sub=dft_sub)[0]
 
 g2 = gradient(model0, d_lin, rec_t.coordinates.data, u0, return_op=False, space_order=8,
-              w=None, freq=freq_list, dft_sub=dft_sub, isic=True)
+              w=None, freq=freq_list, dft_sub=dft_sub, isic=True)[0]
 # Plot
 plt.figure()
 plt.imshow(d_lin, vmin=-1, vmax=1, cmap='gray', aspect='auto')
