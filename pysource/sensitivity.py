@@ -42,12 +42,12 @@ def grad_expr(gradm, u, v, model, w=None, freq=None, dft_sub=None, isic=False):
     ic_func = ic_dict[func_name(freq=freq, isic=isic)]
     expr = ic_func(as_tuple(u), as_tuple(v), model, freq=freq, factor=dft_sub, w=w)
     if model.fs:
-        eq_g = [Eq(gradm, expr + gradm, subdomain=model.grid.subdomains['nofsdomain'])]
+        eq_g = [Eq(gradm, gradm - expr, subdomain=model.grid.subdomains['nofsdomain'])]
         eq_g += freesurface(model, eq_g)
     else:
-        eq_g = [Eq(gradm, expr + gradm)]
-    return [g.evaluate for g in eq_g]
-    
+        eq_g = [Eq(gradm, gradm - expr)]
+    return eq_g
+
 
 def crosscorr_time(u, v, model, **kwargs):
     """
@@ -63,7 +63,7 @@ def crosscorr_time(u, v, model, **kwargs):
         Model structure
     """
     w = kwargs.get('w') or u[0].indices[0].spacing * model.irho
-    return - w * sum(vv.dt2 * uu for uu, vv in zip(u, v))
+    return w * sum(vv.dt2 * uu for uu, vv in zip(u, v))
 
 
 def crosscorr_freq(u, v, model, freq=None, dft_sub=None, **kwargs):
@@ -114,9 +114,8 @@ def isic_time(u, v, model, **kwargs):
     model: Model
         Model structure
     """
-    w = - u[0].indices[0].spacing * model.irho
-    return w * sum(uu * vv.dt2 * model.m +
-                   grads(uu, so_fact=2).dot(grads(vv, so_fact=2))
+    w = u[0].indices[0].spacing * model.irho
+    return w * sum(uu * vv.dt2 * model.m + inner_grad(uu, vv)
                    for uu, vv in zip(u, v))
 
 
@@ -148,11 +147,9 @@ def isic_freq(u, v, model, **kwargs):
         omega_t = 2*np.pi*f*tsave*factor*dt
         # Gradient weighting is (2*np.pi*f)**2/nt
         w = (2*np.pi*f)**2/time.symbolic_max
+        w2 = factor / time.symbolic_max
         expr += (w * (ufr * cos(omega_t) - ufi * sin(omega_t)) * vv * model.m -
-                 factor / time.symbolic_max * (grads(ufr * cos(omega_t) -
-                                                     ufi * sin(omega_t),
-                                                     so_fact=2).dot(
-                                               grads(vv, so_fact=2))))
+                 w2 * inner_grad(ufr * cos(omega_t) - ufi * sin(omega_t), vv))
     return expr
 
 
@@ -182,7 +179,7 @@ def basic_src(model, u, **kwargs):
     model: Model
         Model containing the perturbation dm
     """
-    w = - model.dm * model.irho
+    w = -model.dm * model.irho
     if model.is_tti:
         return (w * u[0].dt2, w * u[1].dt2)
     return w * u[0].dt2
@@ -207,6 +204,20 @@ def isic_src(model, u, **kwargs):
     if model.is_tti:
         return (-dus[0], -dus[1])
     return -dus[0]
+
+
+def inner_grad(u, v):
+    """
+    Inner product of the gradient of two Function.
+
+    Parameters
+    ----------
+    u: TimeFunction or Function
+        First wavefield
+    v: TimeFunction or Function
+        Second wavefield
+    """
+    return sum([a*b for a, b in zip(grads(u, so_fact=2), grads(v, so_fact=2))])
 
 
 ic_dict = {'isic_freq': isic_freq, 'corr_freq': crosscorr_freq,

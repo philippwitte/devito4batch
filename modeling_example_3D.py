@@ -120,7 +120,7 @@ rec_coords[:, 1] = rec_y.reshape(-1)
 rec_coords[:, 2] = np.array(np.linspace(6., 6., len(rec_coords)))
 
 # Model structure
-model = Model(shape=shape, origin=origin, spacing=spacing, vp=np.sqrt(1/m0), space_order=so,
+model = Model(shape=shape, origin=origin, spacing=spacing, m=m0, space_order=so,
     epsilon=epsilon, delta=delta, theta=theta, rho=rho, nbpml=40, dm=dm)
 
 comm = model.grid.distributor.comm
