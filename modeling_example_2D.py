@@ -47,10 +47,10 @@ rec_coords[:, 0] = np.array(np.linspace(12.5, 9987.5, nrec))
 rec_coords[:, 1] = np.array(np.linspace(6., 6., nrec))
 
 # Model structure
-model = Model(shape=shape, origin=origin, spacing=spacing, vp=np.sqrt(1/m), space_order=so,
+model = Model(shape=shape, origin=origin, spacing=spacing, m=m, space_order=so,
     epsilon=epsilon, delta=delta, theta=theta, nbpml=40)
 
-model0 = Model(shape=shape, origin=origin, spacing=spacing, vp=np.sqrt(1/m0), space_order=so,
+model0 = Model(shape=shape, origin=origin, spacing=spacing, m=m0, space_order=so,
     epsilon=epsilon, delta=delta, theta=theta, nbpml=40)
 
 

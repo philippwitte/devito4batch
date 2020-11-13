@@ -1,8 +1,9 @@
 from kernels import wave_kernel
 from geom_utils import src_rec
 from wave_utils import (wf_as_src, wavefield, otf_dft, extended_src_weights,
-                        extented_src, wavefield_subsampled)
+                        extented_src, wavefield_subsampled, weighted_norm)
 from sensitivity import grad_expr, lin_src
+from utils import weight_fun, opt_op
 
 from devito import Operator, Function
 from devito.tools import as_tuple
@@ -12,16 +13,10 @@ def name(model):
     return "tti" if model.is_tti else ""
 
 
-def opt_op(model, no_ms=False):
-    if model.fs or no_ms:
-        return ('advanced', {})
-    return ('advanced', {'min-storage': True})
-
-
 # Forward propagation
 def forward(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
             q=None, return_op=False, freq_list=None, dft_sub=None,
-            ws=None, t_sub=1):
+            ws=None, t_sub=1, **kwargs):
     """
     Low level propagator, to be used through `interface.py`
     Compute forward wavefield u = A(m)^{-1}*f and related quantities (u(xrcv))
@@ -40,7 +35,7 @@ def forward(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
     q = extented_src(model, ws, wavelet, q=q)
 
     # Set up PDE expression and rearrange
-    pde, tmp = wave_kernel(model, u, q=q)
+    pde = wave_kernel(model, u, q=q)
 
     # Setup source and receiver
     geom_expr, _, rcv = src_rec(model, u, src_coords=src_coords, nt=nt,
@@ -51,7 +46,7 @@ def forward(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
 
     # Create operator and run
     subs = model.spacing_map
-    op = Operator(pde + tmp + geom_expr + dft + eq_save,
+    op = Operator(pde + geom_expr + dft + eq_save,
                   subs=subs, name="forward"+name(model),
                   opt=opt_op(model))
 
@@ -65,7 +60,7 @@ def forward(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
 
 
 def adjoint(model, y, src_coords, rcv_coords, space_order=8, q=0,
-            save=False, ws=None):
+            save=False, ws=None, norm_v=False, w_fun=None):
     """
     Low level propagator, to be used through `interface.py`
     Compute adjoint wavefield v = adjoint(F(m))*y
@@ -78,7 +73,7 @@ def adjoint(model, y, src_coords, rcv_coords, space_order=8, q=0,
     v = wavefield(model, space_order, save=save, nt=nt, fw=False)
 
     # Set up PDE expression and rearrange
-    pde, tmp = wave_kernel(model, v, q=q, fw=False)
+    pde = wave_kernel(model, v, q=q, fw=False)
 
     # Setup source and receiver
     geom_expr, _, rcv = src_rec(model, v, src_coords=rcv_coords, nt=nt,
@@ -87,17 +82,26 @@ def adjoint(model, y, src_coords, rcv_coords, space_order=8, q=0,
     # Extended source
     wsrc, ws_expr = extended_src_weights(model, ws, v)
 
+    # Wavefield norm
+    nv_t, nv_s = ([], [])
+    if norm_v:
+        weights = weight_fun(w_fun, model, src_coords)
+        norm_v, (nv_t, nv_s) = weighted_norm(v, weight=weights)
+
     # Create operator and run
     subs = model.spacing_map
-    op = Operator(pde + tmp + ws_expr + geom_expr,
+    op = Operator(pde + ws_expr + nv_t + geom_expr + nv_s,
                   subs=subs, name="adjoint"+name(model),
                   opt=opt_op(model))
 
+    # Run operator
     summary = op()
 
     # Output
     if wsrc:
         return wsrc, summary
+    if norm_v:
+        return rcv, v, norm_v.data[0], summary
     return rcv, v, summary
 
 
@@ -105,14 +109,13 @@ def gradient(model, residual, rcv_coords, u, return_op=False, space_order=8,
              w=None, freq=None, dft_sub=None, isic=False):
     """
     Low level propagator, to be used through `interface.py`
-    Compute adjoint wavefield v = adjoint(F(m))*y
-    and related quantities (||v||_w, v(xsrc))
+    Compute the action of the adjoint Jacobian onto a residual J'* δ d.
     """
     # Setting adjoint wavefieldgradient
     v = wavefield(model, space_order, fw=False)
 
     # Set up PDE expression and rearrange
-    pde, tmp = wave_kernel(model, v, fw=False)
+    pde = wave_kernel(model, v, fw=False)
 
     # Setup source and receiver
     geom_expr, _, _ = src_rec(model, v, src_coords=rcv_coords,
@@ -124,24 +127,26 @@ def gradient(model, residual, rcv_coords, u, return_op=False, space_order=8,
 
     # Create operator and run
     subs = model.spacing_map
-    op = Operator(pde + tmp + geom_expr + g_expr,
+    op = Operator(pde + geom_expr + g_expr,
                   subs=subs, name="gradient"+name(model),
                   opt=opt_op(model))
 
     if return_op:
         return op, gradm, v
+
     summary = op()
 
     # Output
     return gradm, summary
 
 
-def born(model, src_coords, rcv_coords, wavelet, space_order=8,
-         save=False, q=None, isic=False, ws=None, t_sub=1):
+def born(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
+         q=None, return_op=False, isic=False, freq_list=None, dft_sub=None,
+         ws=None, t_sub=1, nlind=False):
     """
     Low level propagator, to be used through `interface.py`
-    Compute adjoint wavefield v = adjoint(F(m))*y
-    and related quantities (||v||_w, v(xsrc))
+    Compute linearized wavefield U = J(m)* δ m
+    and related quantities.
     """
     nt = wavelet.shape[0]
     # Setting wavefield
@@ -156,20 +161,70 @@ def born(model, src_coords, rcv_coords, wavelet, space_order=8,
     q = extented_src(model, ws, wavelet, q=q)
 
     # Set up PDE expression and rearrange
-    pde, tmpu = wave_kernel(model, u, q=q)
-    pdel, tmpul = wave_kernel(model, ul, q=lin_src(model, u, isic=isic))
+    pde = wave_kernel(model, u, q=q)
+    pdel = wave_kernel(model, ul, q=lin_src(model, u, isic=isic))
+    if model.dm == 0:
+        pdel = []
 
     # Setup source and receiver
-    geom_expr, _, _ = src_rec(model, u, src_coords=src_coords, wavelet=wavelet)
-    geom_exprl, _, rcvl = src_rec(model, ul, rec_coords=rcv_coords, nt=wavelet.shape[0])
+    geom_expr, _, rcvnl = src_rec(model, u, rec_coords=rcv_coords if nlind else None,
+                                  src_coords=src_coords, wavelet=wavelet)
+    geom_exprl, _, rcvl = src_rec(model, ul, rec_coords=rcv_coords, nt=nt)
+
+    # On-the-fly Fourier
+    dft, dft_modes = otf_dft(u, freq_list, model.critical_dt, factor=dft_sub)
 
     # Create operator and run
     subs = model.spacing_map
-    op = Operator(pde + tmpu + geom_expr + geom_exprl + pdel + tmpul + eq_save,
+    op = Operator(pde + geom_expr + geom_exprl + pdel + dft + eq_save,
                   subs=subs, name="born"+name(model),
-                  opt=opt_op(model, no_ms=ws is not None))
+                  opt=opt_op(model))
+
+    outrec = (rcvl, rcvnl) if nlind else rcvl
+    if return_op:
+        return op, u, outrec
 
     summary = op()
 
     # Output
-    return rcvl, (u_save if t_sub > 1 else u), summary
+    return outrec, dft_modes or (u_save if t_sub > 1 else u), summary
+
+
+# Forward propagation
+def forward_grad(model, src_coords, rcv_coords, wavelet, v, space_order=8,
+                 q=None, ws=None, isic=False, w=None, **kwargs):
+    """
+    Low level propagator, to be used through `interface.py`
+    Compute forward wavefield u = A(m)^{-1}*f and related quantities (u(xrcv))
+    """
+    # Number of time steps
+    nt = as_tuple(q)[0].shape[0] if wavelet is None else wavelet.shape[0]
+
+    # Setting forward wavefield
+    u = wavefield(model, space_order, save=False)
+
+    # Add extended source
+    q = q or wf_as_src(u, w=0)
+    q = extented_src(model, ws, wavelet, q=q)
+
+    # Set up PDE expression and rearrange
+    pde = wave_kernel(model, u, q=q)
+
+    # Setup source and receiver
+    geom_expr, _, rcv = src_rec(model, u, src_coords=src_coords, nt=nt,
+                                rec_coords=rcv_coords, wavelet=wavelet)
+
+    # Setup gradient wrt m
+    gradm = Function(name="gradm", grid=model.grid)
+    g_expr = grad_expr(gradm, u, v, model, w=w, isic=isic)
+
+    # Create operator and run
+    subs = model.spacing_map
+    op = Operator(pde + geom_expr + g_expr,
+                  subs=subs, name="forward_grad"+name(model),
+                  opt=opt_op(model))
+
+    summary = op()
+
+    # Output
+    return rcv, gradm, summary

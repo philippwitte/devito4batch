@@ -1,6 +1,6 @@
-from sympy import sqrt, rot_axis2, rot_axis3
+from sympy import rot_axis2, rot_axis3
 
-from devito import TensorFunction, VectorFunction, Eq, Differentiable
+from devito import TensorFunction, VectorFunction, Differentiable
 
 
 def grads(func, so_fact=1, side=1):
@@ -46,23 +46,6 @@ def laplacian(v, irho):
     return Lap
 
 
-def ssa_tti(u, v, model, fw=False):
-    """
-    TTI finite difference kernel.
-
-    Parameters
-    ----------
-    u : TimeFunction
-        first TTI field
-    v : TimeFunction
-        second TTI field
-    model: Model
-        Model structure
-    """
-
-    return tensor_fact(u, v, model, fw=fw)
-
-
 def R_mat(model):
     """
     Rotation matrix according to tilt and asymut.
@@ -78,27 +61,12 @@ def R_mat(model):
         Rt *= rot_axis3(model.phi)
     else:
         Rt = Rt[[0, 2], [0, 2]]
-    return Rt   #TensorFunction(name="R", grid=model.grid, components=Rt, symmetric=False)
-
-
-def P_M(model, u, v):
-    """
-    Vectorial temporaries for TTI.
-
-    Parameters
-    ----------
-    model: Model
-        Model structure
-    so: Int
-        Space order for discretization
-    """
-    # Vector for gradients
-    st = tuple([None]*model.dim)
-    P_I = VectorFunction(name="P_I%s" % u.name, grid=model.grid,
-                         space_order=u.space_order, staggered=st)
-    M_I = VectorFunction(name="M_I%s" % v.name, grid=model.grid,
-                         space_order=v.space_order, staggered=st)
-    return P_I, M_I
+    R = TensorFunction(name="R", grid=model.grid, components=Rt, symmetric=False)
+    try:
+        R.name == "R"
+        return R
+    except AttributeError:
+        return Rt
 
 
 def thomsen_mat(model):
@@ -117,8 +85,8 @@ def thomsen_mat(model):
     a_ii = [[b * delt, 0, 0],
             [0, b * delt, 0],
             [0, 0, b]]
-    b_ii = [[b * ((eps - delt) * delt)**(.5), 0, 0],
-            [0, b * ((eps - delt) * delt)**(.5), 0],
+    b_ii = [[b * ((eps - delt) * delt)**.5, 0, 0],
+            [0, b * ((eps - delt) * delt)**.5, 0],
             [0, 0, 0]]
     c_ii = [[b * (eps - delt), 0, 0],
             [0, b * (eps - delt), 0],
@@ -135,7 +103,7 @@ def thomsen_mat(model):
     return A, B, C
 
 
-def tensor_fact(u, v, model, fw=False):
+def sa_tti(u, v, model):
     """
     Tensor factorized SSA TTI wave equation spatial derivatives.
 
@@ -152,10 +120,8 @@ def tensor_fact(u, v, model, fw=False):
     A, B, C = thomsen_mat(model)
     # Rotation Matrix
     R = R_mat(model)
-    # Tensor temps
-    P_I, M_I = P_M(model, u, v)
-    u_next, v_next = (u.forward, v.forward) if fw else (u.backward, v.backward)
-    eq_PI = Eq(P_I, R.T * (A * R * grads(u_next) + B * R * grads(v_next)))
-    eq_MI = Eq(M_I, R.T * (B * R * grads(u_next) + C * R * grads(v_next)))
 
-    return divs(P_I), divs(M_I), eq_PI, eq_MI
+    PI = R.T * (A * R * grads(u) + B * R * grads(v))
+    MI = R.T * (B * R * grads(u) + C * R * grads(v))
+
+    return divs(PI), divs(MI)
