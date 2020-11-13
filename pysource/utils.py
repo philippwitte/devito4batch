@@ -73,7 +73,7 @@ def compute_optalpha(norm_r, norm_Fty, epsilon, comp_alpha=True):
         return 1
 
 
-def opt_op(model):
+def opt_op(model, noms=False):
     """
     Setup the compiler options for the operator. Dependeing on the devito
     version more or less options can be used for performance, mostly impacting TTI.
@@ -85,7 +85,7 @@ def opt_op(model):
     """
     opts = {'openmp': True, 'mpi': False}
     # Minimal size temporaries
-    if not model.fs:
+    if not model.fs and not noms:
         try:
             opts['min-storage'] = True
             'min-storage' in cpo._normalize_kwargs(options=dict(opts))['options']

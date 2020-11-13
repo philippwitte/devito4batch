@@ -121,7 +121,7 @@ def sa_tti(u, v, model):
     # Rotation Matrix
     R = R_mat(model)
 
-    PI = R.T * (A * R * grads(u) + B * R * grads(v))
-    MI = R.T * (B * R * grads(u) + C * R * grads(v))
+    PI = R.T * (A * R * grads(u, so_fact=2) + B * R * grads(v, so_fact=2))
+    MI = R.T * (B * R * grads(u, so_fact=2) + C * R * grads(v, so_fact=2))
 
-    return divs(PI), divs(MI)
+    return divs(PI, so_fact=2), divs(MI, so_fact=2)
