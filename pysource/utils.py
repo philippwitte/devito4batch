@@ -1,6 +1,7 @@
 import numpy as np
 from sympy import sqrt
 
+from devito import configuration
 from devito.core import CPU64NoopOperator as cpo
 from devito.exceptions import InvalidOperator
 from devito.tools import as_tuple
@@ -73,7 +74,7 @@ def compute_optalpha(norm_r, norm_Fty, epsilon, comp_alpha=True):
         return 1
 
 
-def opt_op(model, noms=False):
+def opt_op(model):
     """
     Setup the compiler options for the operator. Dependeing on the devito
     version more or less options can be used for performance, mostly impacting TTI.
@@ -83,9 +84,9 @@ def opt_op(model, noms=False):
     model: Model
         Model structure to know if we are in a TTI model
     """
-    opts = {'openmp': True, 'mpi': False}
+    opts = {'openmp': True, 'mpi': configuration['mpi']}
     # Minimal size temporaries
-    if not model.fs and not noms:
+    if not model.fs:
         try:
             opts['min-storage'] = True
             'min-storage' in cpo._normalize_kwargs(options=dict(opts))['options']

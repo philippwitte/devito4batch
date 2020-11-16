@@ -162,10 +162,10 @@ def born(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
 
     # Set up PDE expression and rearrange
     pde = wave_kernel(model, u, q=q)
+    pdel = wave_kernel(model, ul, q=lin_src(model, u, isic=isic))
     if model.dm == 0:
         pdel = []
-    else:
-        pdel = wave_kernel(model, ul, q=lin_src(model, u, isic=isic))
+
     # Setup source and receiver
     geom_expr, _, rcvnl = src_rec(model, u, rec_coords=rcv_coords if nlind else None,
                                   src_coords=src_coords, wavelet=wavelet)
@@ -176,9 +176,9 @@ def born(model, src_coords, rcv_coords, wavelet, space_order=8, save=False,
 
     # Create operator and run
     subs = model.spacing_map
-    op = Operator(pde + geom_expr + pdel + geom_exprl + dft + eq_save,
+    op = Operator(pde + geom_expr + geom_exprl + pdel + dft + eq_save,
                   subs=subs, name="born"+name(model),
-                  opt=opt_op(model, noms=True))
+                  opt=opt_op(model))
 
     outrec = (rcvl, rcvnl) if nlind else rcvl
     if return_op:

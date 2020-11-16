@@ -12,8 +12,6 @@ from propagators import forward, born, gradient
 parser = ArgumentParser(description="Adjoint test args")
 parser.add_argument("--tti", default=False, action='store_true',
                     help="Test acoustic or tti")
-parser.add_argument("--isic", default=False, action='store_true',
-                    help="Use ISIC")
 parser.add_argument("--fs", default=False, action='store_true',
                     help="Test with free surface")
 parser.add_argument('-so', dest='space_order', default=8, type=int,
@@ -74,7 +72,7 @@ rec_t.coordinates.data[:, 1] = 20.
 # Linearized data
 print("Forward J")
 dD_hat, u0l, _ = born(model, src.coordinates.data, rec_t.coordinates.data,
-                      src.data, isic=args.isic, save=True)
+                      src.data, save=True)
 
 # Forward
 print("Forward")
@@ -83,7 +81,7 @@ _, u0, _ = forward(model, src.coordinates.data, rec_t.coordinates.data,
 
 # gradient
 print("Adjoint J")
-dm_hat, _ = gradient(model, dD_hat, rec_t.coordinates.data, u0, isic=args.isic)
+dm_hat, _ = gradient(model, dD_hat, rec_t.coordinates.data, u0)
 
 # Adjoint test
 a = model.critical_dt * inner(dD_hat, dD_hat)
