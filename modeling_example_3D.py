@@ -1,5 +1,5 @@
 import sys, os
-sys.path.insert(0,'/usr/local/devito4batch/pysource/')
+sys.path.insert(0,'/home/pwitte/devito4batch/pysource/')
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -82,14 +82,14 @@ def collect_shot(comm, rec):
         return None, None
     
 
-shape = (401, 401, 267)
+shape = (201, 201, 167)
 rho = np.ones(shape, dtype='float32')
 epsilon = 0*np.ones(shape, dtype='float32')
 delta = 0*np.ones(shape, dtype='float32')
 theta = 0*np.ones(shape, dtype='float32')
 
 vp = 1.5*np.ones(shape, dtype='float32') 
-vp[:, :, 100:] = 4.0
+vp[:, :, 80:] = 4.0
 vp0 = 1.5*np.ones(shape, dtype='float32')
 
 m = 1.0/vp**2
@@ -102,16 +102,16 @@ so = 12
 
 # Source geometry
 src_coords = np.empty((1, 3), dtype='float32')
-src_coords[0, 0] = 2500.0
-src_coords[0, 1] = 2500.0
-src_coords[0, 2] = 287.5
+src_coords[0, 0] = 1250.0
+src_coords[0, 1] = 1250.0
+src_coords[0, 2] = 22.5
 
 # Receiver geometry
 nxrec = 199
 nyrec = 299
 
-rec_coords_x = np.array(np.linspace(12.5, 4987.5, nxrec))
-rec_coords_y = np.array(np.linspace(12.5, 4987.5, nyrec))
+rec_coords_x = np.array(np.linspace(12.5, 2487.5, nxrec))
+rec_coords_y = np.array(np.linspace(12.5, 2487.5, nyrec))
 rec_x, rec_y = np.meshgrid(rec_coords_x, rec_coords_y)
 
 rec_coords =  np.empty((nxrec*nyrec, 3), dtype='float32')
@@ -120,8 +120,7 @@ rec_coords[:, 1] = rec_y.reshape(-1)
 rec_coords[:, 2] = np.array(np.linspace(6., 6., len(rec_coords)))
 
 # Model structure
-model = Model(shape=shape, origin=origin, spacing=spacing, m=m0, space_order=so,
-    epsilon=epsilon, delta=delta, theta=theta, rho=rho, nbpml=40, dm=dm)
+model = Model(shape=shape, origin=origin, spacing=spacing, m=m0, space_order=so, nbpml=40)
 
 comm = model.grid.distributor.comm
 rank = comm.Get_rank()
@@ -130,7 +129,7 @@ size = comm.size
 #########################################################################################
 
 # Source wavelet
-tn = 1000.
+tn = 800.
 dt_shot = model.critical_dt
 nt = int(tn/dt_shot)
 time_s = np.linspace(0, tn, nt)
@@ -140,7 +139,7 @@ wavelet = Ricker(0.015, time_s)
 #########################################################################################
 
 # Devito operator
-d_obs = forward(model, src_coords, rec_coords, wavelet, save=False, t_sub=4)[0]
+d_obs = forward(model, src_coords, rec_coords, wavelet, save=False)[0]
 d_gather, rec_gather = collect_shot(comm, d_obs)
 
 if rank == 0:
