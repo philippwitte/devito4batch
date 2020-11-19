@@ -1,5 +1,6 @@
 import sys, os
-sys.path.insert(0,'/home/pwitte/devito4batch/pysource/')
+#sys.path.insert(0,'/home/pwitte/devito4batch/pysource/')
+sys.path.insert(0,'/usr/local/devito4batch/pysource/')
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -82,15 +83,16 @@ def collect_shot(comm, rec):
         return None, None
     
 
-shape = (201, 201, 167)
+shape = (151, 151, 121)
 rho = np.ones(shape, dtype='float32')
-epsilon = 0*np.ones(shape, dtype='float32')
-delta = 0*np.ones(shape, dtype='float32')
-theta = 0*np.ones(shape, dtype='float32')
+epsilon = 0.01*np.ones(shape, dtype='float32')
+delta = 0.005*np.ones(shape, dtype='float32')
+theta = 0.02*np.ones(shape, dtype='float32')
+phi = 0.02*np.ones(shape, dtype='float32')
 
-vp = 1.5*np.ones(shape, dtype='float32') 
-vp[:, :, 80:] = 4.0
-vp0 = 1.5*np.ones(shape, dtype='float32')
+vp = 2*np.ones(shape, dtype='float32') 
+vp[:, :, 60:] = 4.0
+vp0 = 2*np.ones(shape, dtype='float32')
 
 m = 1.0/vp**2
 m0 = 1.0/vp0**2
@@ -102,16 +104,16 @@ so = 12
 
 # Source geometry
 src_coords = np.empty((1, 3), dtype='float32')
-src_coords[0, 0] = 1250.0
-src_coords[0, 1] = 1250.0
+src_coords[0, 0] = 937.0
+src_coords[0, 1] = 937.0
 src_coords[0, 2] = 22.5
 
 # Receiver geometry
 nxrec = 199
 nyrec = 299
 
-rec_coords_x = np.array(np.linspace(12.5, 2487.5, nxrec))
-rec_coords_y = np.array(np.linspace(12.5, 2487.5, nyrec))
+rec_coords_x = np.array(np.linspace(12.5, 1875.0, nxrec))
+rec_coords_y = np.array(np.linspace(12.5, 1875.0, nyrec))
 rec_x, rec_y = np.meshgrid(rec_coords_x, rec_coords_y)
 
 rec_coords =  np.empty((nxrec*nyrec, 3), dtype='float32')
@@ -120,7 +122,9 @@ rec_coords[:, 1] = rec_y.reshape(-1)
 rec_coords[:, 2] = np.array(np.linspace(6., 6., len(rec_coords)))
 
 # Model structure
-model = Model(shape=shape, origin=origin, spacing=spacing, m=m0, space_order=so, nbpml=40)
+model = Model(shape=shape, origin=origin, spacing=spacing, m=m0, space_order=so, nbpml=40,
+    epsilon=epsilon, delta=delta, theta=theta, phi=phi, dm=dm)
+
 
 comm = model.grid.distributor.comm
 rank = comm.Get_rank()
@@ -129,7 +133,7 @@ size = comm.size
 #########################################################################################
 
 # Source wavelet
-tn = 800.
+tn = 1000.
 dt_shot = model.critical_dt
 nt = int(tn/dt_shot)
 time_s = np.linspace(0, tn, nt)
@@ -139,12 +143,44 @@ wavelet = Ricker(0.015, time_s)
 #########################################################################################
 
 # Devito operator
-d_obs = forward(model, src_coords, rec_coords, wavelet, save=False)[0]
-d_gather, rec_gather = collect_shot(comm, d_obs)
+d_obs = born(model, src_coords, rec_coords, wavelet, save=False)[0]
 
-if rank == 0:
-    segy_write(d_gather, src_coords[:, 0], src_coords[:, 2], rec_coords[:, 0], rec_coords[:, 2], dt_shot, 'shot_n_2.segy',
-    sourceY=src_coords[:, 1], groupY=rec_coords[:, 1])
+u0 = forward(model, src_coords, rec_coords, wavelet, save=True, t_sub=8)[1]
+grad_dist = gradient(model, d_obs, d_obs.coordinates, u0, isic=False)[0]
+
+
+if rank > 0:
+    # Send result to master
+    comm.send(model.m.local_indices, dest=0, tag=10)
+    comm.send(grad_dist.data, dest=0, tag=11)
+
+else:   # Master
+    # Initialize full array
+    grad = np.empty(shape=model.m.shape_global, dtype='float32')
+    grad[model.m.local_indices] = grad_dist.data
+
+    # Collect gradients
+    for j in range(1, size):
+        local_indices = comm.recv(source=j, tag=10)
+        glocal = comm.recv(source=j, tag=11)
+        grad[local_indices] = glocal
+
+    # Save file
+    g.data.dump('gradient_mpi.dat')
+
+
+#g.data.dump('grad')
+
+
+
+
+#segy_write(d_obs.data, src_coords[:, 0], src_coords[:, 2], rec_coords[:, 0], rec_coords[:, 2], dt_shot, 'shot_3d.segy')
+
+# d_gather, rec_gather = collect_shot(comm, d_obs)
+
+# if rank == 0:
+#     segy_write(d_gather, src_coords[:, 0], src_coords[:, 2], rec_coords[:, 0], rec_coords[:, 2], dt_shot, 'shot_n_2.segy',
+#     sourceY=src_coords[:, 1], groupY=rec_coords[:, 1])
 
 
 
